@@ -127,7 +127,7 @@ export default function LoginPage() {
             </Button>
           </form>
           <div className="mt-4 text-sm text-gray-600 dark:text-gray-400 text-center">
-            Demo credentials: admin@arkoflight.com / admin123
+            Login credentials: admin@arkoflight.com / admin123
           </div>
         </CardContent>
       </Card>
