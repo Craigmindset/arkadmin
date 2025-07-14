@@ -133,7 +133,8 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="border-t border-border">
+      {/* Desktop Footer Logout */}
+      <SidebarFooter className="border-t border-border hidden md:block">
         <SidebarMenu>
           <SidebarMenuItem>
             <Button
@@ -147,7 +148,18 @@ export function AppSidebar() {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
-      <SidebarRail />
+      {/* Mobile Rail Logout */}
+      <SidebarRail>
+        <Button
+          variant="ghost"
+          className="md:hidden w-full flex flex-col items-center justify-center text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground p-2"
+          onClick={handleLogout}
+          aria-label="Logout"
+        >
+          <LogOut className="h-5 w-5 mb-1" />
+          <span className="text-xs">Logout</span>
+        </Button>
+      </SidebarRail>
     </Sidebar>
   );
 }
