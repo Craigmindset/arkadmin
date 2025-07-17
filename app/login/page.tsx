@@ -1,8 +1,10 @@
+/// <reference types="node" />
 "use client";
 
 import type React from "react";
 
 import { useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +20,15 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Eye, EyeOff } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-export default function LoginPage() {
+function LoginPage() {
+  // Initialize Supabase client
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    "https://pytofmzgoenrkwhjmtni.supabase.co";
+  const supabaseAnonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5dG9mbXpnb2Vucmt3aGptdG5pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3MTU2NjYsImV4cCI6MjA2ODI5MTY2Nn0.ACPdzGdpACTTEjj9YMTfdTVOM-3fZherlXe2J2gFqYc";
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -26,25 +36,31 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
     setError("");
 
-    // Simulate login - replace with actual authentication
-    if (email === "admin@arkoflight.com" && password === "admin123") {
-      // Store auth state (in real app, use proper auth)
-      localStorage.setItem("isAuthenticated", "true");
-      router.push("/dashboard");
-    } else {
-      setError("Invalid email or password");
+    // Supabase authentication
+    const { error: supabaseError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (supabaseError) {
+      setError(supabaseError.message || "Invalid email or password");
+      setIsLoading(false);
+      return;
     }
 
+    // Optionally store auth state or token if needed
+    localStorage.setItem("isAuthenticated", "true");
+    router.push("/dashboard");
     setIsLoading(false);
   };
 
   const togglePasswordVisibility = () => {
-    setShowPassword(!showPassword);
+    setShowPassword((prev: boolean) => !prev);
   };
 
   return (
@@ -75,7 +91,9 @@ export default function LoginPage() {
                 type="email"
                 placeholder="Enter your email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setEmail(e.target.value)
+                }
                 required
                 className="w-full"
               />
@@ -93,7 +111,9 @@ export default function LoginPage() {
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setPassword(e.target.value)
+                  }
                   maxLength={8}
                   required
                   className="w-full pr-10"
@@ -134,3 +154,5 @@ export default function LoginPage() {
     </div>
   );
 }
+
+export default LoginPage;
