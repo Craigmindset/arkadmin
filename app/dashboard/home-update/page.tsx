@@ -27,7 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
 interface HomeCard {
-  id: string;
+  id: number;
   title: string;
   imageUrl: string;
   buttonUrl: string;
@@ -44,28 +44,28 @@ interface SliderImage {
 
 const mockHomeCards: HomeCard[] = [
   {
-    id: "CARD001",
+    id: 1,
     title: "Welcome to Ark of Light",
     imageUrl: "/placeholder.svg?height=200&width=300",
     buttonUrl: "https://arkoflight.com/welcome",
     isActive: true,
   },
   {
-    id: "CARD002",
+    id: 2,
     title: "Sunday Service Live",
     imageUrl: "/placeholder.svg?height=200&width=300",
     buttonUrl: "https://arkoflight.com/live",
     isActive: true,
   },
   {
-    id: "CARD003",
+    id: 3,
     title: "Prayer Requests",
     imageUrl: "/placeholder.svg?height=200&width=300",
     buttonUrl: "https://arkoflight.com/prayer",
     isActive: false,
   },
   {
-    id: "CARD004",
+    id: 4,
     title: "Community Events",
     imageUrl: "/placeholder.svg?height=200&width=300",
     buttonUrl: "https://arkoflight.com/events",
@@ -110,8 +110,27 @@ export default function HomeUpdatePage() {
   const [isSlideDialogOpen, setIsSlideDialogOpen] = useState(false);
 
   useEffect(() => {
-    // Fetch home cards (mocked)
-    setHomeCards(mockHomeCards);
+    // Fetch home cards from Supabase 'home_slider2' table
+    const fetchHomeCards = async () => {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from("home_slider2")
+        .select("id, title, image_url, button_link, active");
+      if (error) {
+        setHomeCards([]);
+      } else {
+        const cards = (data || []).map((card) => ({
+          id: card.id,
+          title: card.title,
+          imageUrl: card.image_url,
+          buttonUrl: card.button_link,
+          isActive: card.active ?? true,
+        }));
+        setHomeCards(cards);
+      }
+      setIsLoading(false);
+    };
+
     // Fetch slides with id 1, 2, 3, 4 from Supabase
     const fetchSlides = async () => {
       setIsLoading(true);
@@ -133,6 +152,8 @@ export default function HomeUpdatePage() {
       }
       setIsLoading(false);
     };
+
+    fetchHomeCards();
     fetchSlides();
   }, []);
 
@@ -147,29 +168,95 @@ export default function HomeUpdatePage() {
     setIsCardDialogOpen(true);
   };
 
+  // Add new card
+  const handleAddCard = () => {
+    setEditingCard(null);
+    setCardFormData({
+      title: "",
+      imageUrl: "",
+      buttonUrl: "",
+      imageFile: null,
+    });
+    setIsCardDialogOpen(true);
+  };
+
   const handleSaveCard = async () => {
+    setIsLoading(true);
+    let imageUrl = cardFormData.imageUrl;
+    if (cardFormData.imageFile) {
+      const fileExt = cardFormData.imageFile.name.split(".").pop();
+      const fileName = `homecard_${Date.now()}_${
+        editingCard ? editingCard.id : "new"
+      }.${fileExt}`;
+      const { data: storageData, error: storageError } = await supabase.storage
+        .from("slider-images")
+        .upload(fileName, cardFormData.imageFile, { upsert: true });
+      if (storageError) {
+        alert(`Failed to upload image: ${storageError.message}`);
+        setIsLoading(false);
+        return;
+      }
+      imageUrl = supabase.storage.from("slider-images").getPublicUrl(fileName)
+        .data.publicUrl;
+    }
+
+    let dbResult;
     if (editingCard) {
       // Update existing card
-      const updatedCard = {
-        ...editingCard,
-        title: cardFormData.title,
-        imageUrl: cardFormData.imageFile
-          ? URL.createObjectURL(cardFormData.imageFile)
-          : cardFormData.imageUrl,
-        buttonUrl: cardFormData.buttonUrl,
-      };
-
-      setHomeCards(
-        homeCards.map((card) =>
-          card.id === editingCard.id ? updatedCard : card
-        )
-      );
-      setIsCardDialogOpen(false);
-      setEditingCard(null);
-
-      // Here you would make an actual API call to save to database
-      console.log("Saving card to database:", updatedCard);
+      dbResult = await supabase
+        .from("home_slider2")
+        .update({
+          image_url: imageUrl,
+          title: cardFormData.title,
+          button_link: cardFormData.buttonUrl,
+          active: editingCard.isActive,
+        })
+        .eq("id", editingCard.id)
+        .select();
+    } else {
+      // Insert new card
+      dbResult = await supabase
+        .from("home_slider2")
+        .insert([
+          {
+            image_url: imageUrl,
+            title: cardFormData.title,
+            button_link: cardFormData.buttonUrl,
+            active: true,
+          },
+        ])
+        .select();
     }
+    const { data: dbData, error: dbError } = dbResult;
+    if (dbError) {
+      alert(`Failed to save card: ${dbError.message}`);
+      setIsLoading(false);
+      return;
+    }
+    // Update local state
+    let updatedCards = [...homeCards];
+    const newCard = {
+      id: dbData?.[0]?.id || (editingCard ? editingCard.id : undefined),
+      title: cardFormData.title,
+      imageUrl,
+      buttonUrl: cardFormData.buttonUrl,
+      isActive: editingCard ? editingCard.isActive : true,
+    };
+    if (editingCard) {
+      const idx = updatedCards.findIndex((c) => c.id === editingCard.id);
+      if (idx !== -1) {
+        updatedCards[idx] = newCard;
+      } else {
+        updatedCards.push(newCard);
+      }
+    } else {
+      updatedCards.push(newCard);
+    }
+    setHomeCards(updatedCards);
+    setIsCardDialogOpen(false);
+    setEditingCard(null);
+    setIsLoading(false);
+    alert(editingCard ? "Card updated!" : "Card added!");
   };
 
   const handleCardImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -306,7 +393,7 @@ export default function HomeUpdatePage() {
   return (
     <div className="space-y-6 md:space-y-8">
       <div className="space-y-2">
-        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+        <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground">
           Home Update
         </h1>
         <p className="text-sm md:text-base text-muted-foreground">
@@ -318,8 +405,8 @@ export default function HomeUpdatePage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-semibold">Image Slider</h2>
-            <p className="text-sm text-muted-foreground">
+            <h2 className="text-lg md:text-xl font-semibold">Image Slider</h2>
+            <p className="text-xs md:text-sm text-muted-foreground">
               Manage the main image slider displayed on the app home screen
             </p>
           </div>
@@ -331,8 +418,10 @@ export default function HomeUpdatePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Current Slider Images</CardTitle>
-            <CardDescription>
+            <CardTitle className="text-base md:text-lg text-yellow-200">
+              Current Slider Images
+            </CardTitle>
+            <CardDescription className="text-xs md:text-sm">
               These images are currently displayed in the app's main slider
             </CardDescription>
           </CardHeader>
@@ -377,11 +466,17 @@ export default function HomeUpdatePage() {
 
       {/* Home Cards Section */}
       <div className="space-y-4">
-        <div>
-          <h2 className="text-2xl font-semibold">Home Cards</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage individual content cards displayed on the home screen
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold">Home Cards</h2>
+            <p className="text-sm text-muted-foreground">
+              Manage individual content cards displayed on the home screen
+            </p>
+          </div>
+          <Button onClick={handleAddCard}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Card
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
@@ -415,6 +510,15 @@ export default function HomeUpdatePage() {
                   <CardDescription className="text-sm text-gray-600 break-all">
                     URL: {card.buttonUrl}
                   </CardDescription>
+                </div>
+                <div className="flex justify-end pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleEditCard(card)}
+                  >
+                    <Edit className="h-4 w-4 mr-1" /> Edit
+                  </Button>
                 </div>
               </CardContent>
             </Card>
