@@ -73,6 +73,20 @@ export default function MusicUpdatePage() {
     image_url: "",
     audio_url: "",
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState("");
+  const itemsPerPage = 10;
+  const filteredSongs = songs.filter(
+    (song) =>
+      song.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      song.artist.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (song.genre || "").toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const totalPages = Math.ceil(filteredSongs.length / itemsPerPage);
+  const paginatedSongs = filteredSongs.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   // Supabase client
   const supabaseUrl =
@@ -246,13 +260,25 @@ export default function MusicUpdatePage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-        <div className="space-y-2">
+        <div className="space-y-2 flex-1">
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
             Manage Music Library
           </h1>
           <p className="text-sm md:text-base text-muted-foreground">
             Add, edit, and manage songs in the Ark of Light music library.
           </p>
+          <div className="mt-2">
+            <Input
+              type="text"
+              placeholder="Search by title, artist, or genre..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="max-w-sm"
+            />
+          </div>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
@@ -379,7 +405,7 @@ export default function MusicUpdatePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {songs.map((song) => (
+              {paginatedSongs.map((song) => (
                 <TableRow key={song.id}>
                   <TableCell>
                     <img
@@ -438,6 +464,28 @@ export default function MusicUpdatePage() {
               ))}
             </TableBody>
           </Table>
+          {/* Pagination Controls */}
+          <div className="flex justify-center items-center mt-4 gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <span className="px-2 text-sm">
+              Page {currentPage} of {totalPages}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage === totalPages || totalPages === 0}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
