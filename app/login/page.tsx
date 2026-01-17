@@ -21,10 +21,18 @@ import { Eye, EyeOff } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 function LoginPage() {
-  // Initialize Supabase client
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  // Initialize Supabase client only when needed
+  const getSupabaseClient = () => {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error("Supabase configuration is missing");
+    }
+
+    return createClient(supabaseUrl, supabaseAnonKey);
+  };
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -37,22 +45,30 @@ function LoginPage() {
     setIsLoading(true);
     setError("");
 
-    // Supabase authentication
-    const { error: supabaseError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const supabase = getSupabaseClient();
 
-    if (supabaseError) {
-      setError(supabaseError.message || "Invalid email or password");
+      // Supabase authentication
+      const { error: supabaseError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (supabaseError) {
+        setError(supabaseError.message || "Invalid email or password");
+        setIsLoading(false);
+        return;
+      }
+
+      // Optionally store auth state or token if needed
+      localStorage.setItem("isAuthenticated", "true");
+      router.push("/dashboard");
       setIsLoading(false);
-      return;
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("An error occurred during login. Please try again.");
+      setIsLoading(false);
     }
-
-    // Optionally store auth state or token if needed
-    localStorage.setItem("isAuthenticated", "true");
-    router.push("/dashboard");
-    setIsLoading(false);
   };
 
   const togglePasswordVisibility = () => {
