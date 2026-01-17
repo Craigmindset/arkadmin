@@ -12,6 +12,7 @@ import {
   Users,
   Video,
   MessageSquare,
+  Gamepad2,
 } from "lucide-react";
 
 import {
@@ -79,6 +80,11 @@ const menuItems = [
     title: "G20 Update",
     url: "/dashboard/g20-update",
     icon: Globe,
+  },
+  {
+    title: "Games",
+    url: "/dashboard/games",
+    icon: Gamepad2,
   },
 ];
 

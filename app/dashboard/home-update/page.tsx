@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ import { Separator } from "@/components/ui/separator";
 interface HomeCard {
   id: number;
   title: string;
+  description?: string;
   imageUrl: string;
   buttonUrl: string;
   isActive: boolean;
@@ -89,6 +91,7 @@ export default function HomeUpdatePage() {
   const [editingCard, setEditingCard] = useState<HomeCard | null>(null);
   const [cardFormData, setCardFormData] = useState({
     title: "",
+    description: "",
     imageUrl: "",
     buttonUrl: "",
     imageFile: null as File | null,
@@ -111,13 +114,14 @@ export default function HomeUpdatePage() {
       setIsLoading(true);
       const { data, error } = await supabase
         .from("home_slider2")
-        .select("id, title, image_url, button_link, active");
+        .select("id, title, description, image_url, button_link, active");
       if (error) {
         setHomeCards([]);
       } else {
         const cards = (data || []).map((card) => ({
           id: card.id,
           title: card.title,
+          description: card.description,
           imageUrl: card.image_url,
           buttonUrl: card.button_link,
           isActive: card.active ?? true,
@@ -157,6 +161,7 @@ export default function HomeUpdatePage() {
     setEditingCard(card);
     setCardFormData({
       title: card.title,
+      description: card.description || "",
       imageUrl: card.imageUrl,
       buttonUrl: card.buttonUrl,
       imageFile: null,
@@ -169,6 +174,7 @@ export default function HomeUpdatePage() {
     setEditingCard(null);
     setCardFormData({
       title: "",
+      description: "",
       imageUrl: "",
       buttonUrl: "",
       imageFile: null,
@@ -179,21 +185,12 @@ export default function HomeUpdatePage() {
   const handleSaveCard = async () => {
     setIsLoading(true);
     let imageUrl = cardFormData.imageUrl;
-    if (cardFormData.imageFile) {
-      const fileExt = cardFormData.imageFile.name.split(".").pop();
-      const fileName = `homecard_${Date.now()}_${
-        editingCard ? editingCard.id : "new"
-      }.${fileExt}`;
-      const { data: storageData, error: storageError } = await supabase.storage
-        .from("slider-images")
-        .upload(fileName, cardFormData.imageFile, { upsert: true });
-      if (storageError) {
-        alert(`Failed to upload image: ${storageError.message}`);
-        setIsLoading(false);
-        return;
-      }
-      imageUrl = supabase.storage.from("slider-images").getPublicUrl(fileName)
-        .data.publicUrl;
+
+    // imageUrl is already set from Cloudinary upload, no need for additional upload
+    if (!imageUrl) {
+      alert("Please upload an image");
+      setIsLoading(false);
+      return;
     }
 
     let dbResult;
@@ -204,6 +201,7 @@ export default function HomeUpdatePage() {
         .update({
           image_url: imageUrl,
           title: cardFormData.title,
+          description: cardFormData.description,
           button_link: cardFormData.buttonUrl,
           active: editingCard.isActive,
         })
@@ -217,6 +215,7 @@ export default function HomeUpdatePage() {
           {
             image_url: imageUrl,
             title: cardFormData.title,
+            description: cardFormData.description,
             button_link: cardFormData.buttonUrl,
             active: true,
           },
@@ -234,6 +233,7 @@ export default function HomeUpdatePage() {
     const newCard = {
       id: dbData?.[0]?.id || (editingCard ? editingCard.id : undefined),
       title: cardFormData.title,
+      description: cardFormData.description,
       imageUrl,
       buttonUrl: cardFormData.buttonUrl,
       isActive: editingCard ? editingCard.isActive : true,
@@ -255,17 +255,81 @@ export default function HomeUpdatePage() {
     alert(editingCard ? "Card updated!" : "Card added!");
   };
 
-  const handleCardImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCardImageUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = e.target.files?.[0];
     if (file) {
-      setCardFormData({ ...cardFormData, imageFile: file });
+      // Validate file size (5MB max)
+      const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+      if (file.size > maxSize) {
+        alert(
+          `Image file is too large. Maximum size is 5MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB`,
+        );
+        return;
+      }
+      // Upload to Cloudinary
+      const formDataUpload = new FormData();
+      formDataUpload.append("file", file);
+      formDataUpload.append("fileType", "image");
+
+      try {
+        const response = await fetch("/api/upload", {
+          method: "POST",
+          body: formDataUpload,
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setCardFormData({
+            ...cardFormData,
+            imageUrl: data.secure_url,
+            imageFile: file,
+          });
+        } else {
+          alert(`Failed to upload image: ${data.error}`);
+        }
+      } catch (error) {
+        alert("Failed to upload image");
+      }
     }
   };
 
-  const handleSlideImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSlideImageUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = e.target.files?.[0];
     if (file) {
-      setSlideFormData((prev) => ({ ...prev, imageFile: file }));
+      // Validate file size (5MB max)
+      const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+      if (file.size > maxSize) {
+        alert(
+          `Image file is too large. Maximum size is 5MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB`,
+        );
+        return;
+      }
+      // Upload to Cloudinary
+      const formDataUpload = new FormData();
+      formDataUpload.append("file", file);
+      formDataUpload.append("fileType", "image");
+
+      try {
+        const response = await fetch("/api/upload", {
+          method: "POST",
+          body: formDataUpload,
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setSlideFormData((prev) => ({
+            ...prev,
+            imageUrl: data.secure_url,
+            imageFile: file,
+          }));
+        } else {
+          alert(`Failed to upload image: ${data.error}`);
+        }
+      } catch (error) {
+        alert("Failed to upload image");
+      }
     }
   };
 
@@ -280,19 +344,12 @@ export default function HomeUpdatePage() {
   const handleSaveSlide = async () => {
     setIsLoading(true);
     let imageUrl = slideFormData.imageUrl;
-    if (slideFormData.imageFile) {
-      const fileExt = slideFormData.imageFile.name.split(".").pop();
-      const fileName = `slider_${Date.now()}_${slideFormData.order}.${fileExt}`;
-      const { data: storageData, error: storageError } = await supabase.storage
-        .from("slider-images")
-        .upload(fileName, slideFormData.imageFile, { upsert: true });
-      if (storageError) {
-        alert(`Failed to upload image: ${storageError.message}`);
-        setIsLoading(false);
-        return;
-      }
-      imageUrl = supabase.storage.from("slider-images").getPublicUrl(fileName)
-        .data.publicUrl;
+
+    // imageUrl is already set from Cloudinary upload, no need for additional upload
+    if (!imageUrl) {
+      alert("Please upload an image");
+      setIsLoading(false);
+      return;
     }
 
     // If slide has an id, update; else insert
@@ -531,7 +588,7 @@ export default function HomeUpdatePage() {
               Update the card content that will be displayed on the home screen.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-4">
             <div className="grid gap-2">
               <Label htmlFor="title">Title</Label>
               <Input
@@ -545,7 +602,26 @@ export default function HomeUpdatePage() {
             </div>
 
             <div className="grid gap-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={cardFormData.description}
+                onChange={(e) =>
+                  setCardFormData({
+                    ...cardFormData,
+                    description: e.target.value,
+                  })
+                }
+                placeholder="Enter card description"
+                rows={3}
+              />
+            </div>
+
+            <div className="grid gap-2">
               <Label htmlFor="image">Update Image</Label>
+              <p className="text-xs text-muted-foreground">
+                Max file size: 5MB
+              </p>
               <div className="space-y-2">
                 <Input
                   id="image"
@@ -613,7 +689,7 @@ export default function HomeUpdatePage() {
                 : `Add a new slide to the main slider.`}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-4">
             <div className="grid gap-2">
               <Label htmlFor="slide-title">Title</Label>
               <Input
@@ -627,6 +703,9 @@ export default function HomeUpdatePage() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="slide-image">Image</Label>
+              <p className="text-xs text-muted-foreground">
+                Max file size: 5MB
+              </p>
               <Input
                 id="slide-image"
                 type="file"
