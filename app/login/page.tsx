@@ -22,12 +22,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 function LoginPage() {
   // Initialize Supabase client
-  const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    "https://pytofmzgoenrkwhjmtni.supabase.co";
-  const supabaseAnonKey =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5dG9mbXpnb2Vucmt3aGptdG5pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3MTU2NjYsImV4cCI6MjA2ODI5MTY2Nn0.ACPdzGdpACTTEjj9YMTfdTVOM-3fZherlXe2J2gFqYc";
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
   const supabase = createClient(supabaseUrl, supabaseAnonKey);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

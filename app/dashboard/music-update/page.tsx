@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import {
   Table,
   TableBody,
@@ -36,7 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Edit, Trash2 } from "lucide-react";
+import { Plus, Edit, Trash2, Loader2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,16 +64,27 @@ export default function MusicUpdatePage() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [successModal, setSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   const [editingSong, setEditingSong] = useState<Song | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     title: "",
     artist: "",
     genre: "" as string,
-    imageFile: null as File | null,
-    audioFile: null as File | null,
     image_url: "",
     audio_url: "",
+    isUploadingImage: false,
+    isUploadingAudio: false,
   });
+  const [imageProgress, setImageProgress] = useState(0);
+  const [audioProgress, setAudioProgress] = useState(0);
+  const [alert, setAlert] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
   const itemsPerPage = 10;
@@ -80,28 +92,26 @@ export default function MusicUpdatePage() {
     (song) =>
       song.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       song.artist.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (song.genre || "").toLowerCase().includes(searchTerm.toLowerCase())
+      (song.genre || "").toLowerCase().includes(searchTerm.toLowerCase()),
   );
   const totalPages = Math.ceil(filteredSongs.length / itemsPerPage);
   const paginatedSongs = filteredSongs.slice(
     (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+    currentPage * itemsPerPage,
   );
 
-  // Supabase client
-  const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    "https://pytofmzgoenrkwhjmtni.supabase.co";
-  const supabaseAnonKey =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5dG9mbXpnb2Vucmt3aGptdG5pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3MTU2NjYsImV4cCI6MjA2ODI5MTY2Nn0.ACPdzGdpACTTEjj9YMTfdTVOM-3fZherlXe2J2gFqYc";
-  const supabase =
-    typeof window !== "undefined"
-      ? require("@supabase/supabase-js").createClient(
-          supabaseUrl,
-          supabaseAnonKey
-        )
-      : null;
+  // Supabase client - initialize once
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+  const [supabase, setSupabase] = useState<any>(null);
+
+  useEffect(() => {
+    // Initialize Supabase client only on client side
+    if (typeof window !== "undefined") {
+      const { createClient } = require("@supabase/supabase-js");
+      setSupabase(createClient(supabaseUrl, supabaseAnonKey));
+    }
+  }, [supabaseUrl, supabaseAnonKey]);
 
   useEffect(() => {
     const fetchSongs = async () => {
@@ -117,7 +127,7 @@ export default function MusicUpdatePage() {
       setIsLoading(false);
     };
     fetchSongs();
-  }, []);
+  }, [supabase]);
 
   const handleAddSong = () => {
     setEditingSong(null);
@@ -125,10 +135,10 @@ export default function MusicUpdatePage() {
       title: "",
       artist: "",
       genre: "",
-      imageFile: null,
-      audioFile: null,
       image_url: "",
       audio_url: "",
+      isUploadingImage: false,
+      isUploadingAudio: false,
     });
     setIsDialogOpen(true);
   };
@@ -139,100 +149,226 @@ export default function MusicUpdatePage() {
       title: song.title,
       artist: song.artist,
       genre: song.genre || "",
-      imageFile: null,
-      audioFile: null,
       image_url: song.image_url,
       audio_url: song.audio_url || "",
+      isUploadingImage: false,
+      isUploadingAudio: false,
     });
     setIsDialogOpen(true);
   };
 
   const handleSaveSong = async () => {
-    let image_url = formData.image_url;
-    let audio_url = formData.audio_url;
-    // Upload image if selected
-    if (formData.imageFile && supabase) {
-      const fileExt = formData.imageFile.name.split(".").pop();
-      const fileName = `artist_${Date.now()}.${fileExt}`;
-      const { data: imgData, error: imgError } = await supabase.storage
-        .from("music-library")
-        .upload(fileName, formData.imageFile, { upsert: true });
-      if (imgError) {
-        alert("Image upload failed: " + imgError.message);
-        return;
-      } else {
-        image_url = supabase.storage
-          .from("music-library")
-          .getPublicUrl(fileName).data.publicUrl;
+    setIsSaving(true);
+
+    const logToServer = async (message: string, data?: any) => {
+      try {
+        await fetch("/api/log-error", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message, data }),
+        });
+      } catch (err) {
+        console.log("Failed to log to server:", err);
       }
+    };
+
+    await logToServer("Add button clicked");
+    await logToServer("Form data", formData);
+    await logToServer("Editing song", editingSong);
+
+    // Validate required fields
+    if (
+      !formData.title ||
+      !formData.artist ||
+      !formData.image_url ||
+      !formData.audio_url
+    ) {
+      await logToServer("Validation failed - missing fields");
+      setIsSaving(false);
+      setAlert({
+        type: "error",
+        message:
+          "Please fill in all required fields and upload both image and audio files",
+      });
+      setTimeout(() => setAlert(null), 3000);
+      return;
     }
-    // Upload audio if selected
-    if (formData.audioFile && supabase) {
-      const fileExt = formData.audioFile.name.split(".").pop();
-      const fileName = `audio_${Date.now()}.${fileExt}`;
-      const { data: audData, error: audError } = await supabase.storage
-        .from("music-library")
-        .upload(fileName, formData.audioFile, { upsert: true });
-      if (audError) {
-        alert("Audio upload failed: " + audError.message);
-        return;
-      } else {
-        audio_url = supabase.storage
-          .from("music-library")
-          .getPublicUrl(fileName).data.publicUrl;
-      }
+
+    await logToServer("Validation passed, proceeding with save");
+
+    // Validate that URLs are from Cloudinary
+    if (
+      !formData.image_url.includes("cloudinary.com") ||
+      !formData.audio_url.includes("cloudinary.com")
+    ) {
+      await logToServer("Invalid URLs - not from Cloudinary", {
+        image_url: formData.image_url,
+        audio_url: formData.audio_url,
+      });
+      setIsSaving(false);
+      setAlert({
+        type: "error",
+        message:
+          "Please upload files to Cloudinary first. Invalid file URLs detected.",
+      });
+      setTimeout(() => setAlert(null), 3000);
+      return;
     }
+
+    await logToServer("Cloudinary URLs validated", {
+      image_url: formData.image_url,
+      audio_url: formData.audio_url,
+    });
+
     // Insert or update in Supabase
     if (supabase) {
-      if (editingSong) {
-        // Update
-        const { data, error } = await supabase
-          .from("music_library")
-          .update({
-            title: formData.title,
-            artist: formData.artist,
-            image_url,
-            audio_url,
-            genre: formData.genre,
-          })
-          .eq("id", editingSong.id)
-          .select();
-        if (!error && data && data[0]) {
-          setSongs(
-            songs.map((song) => (song.id === editingSong.id ? data[0] : song))
-          );
-        }
-      } else {
-        // Insert
-        const { data, error } = await supabase
-          .from("music_library")
-          .insert([
-            {
+      try {
+        if (editingSong) {
+          // Update
+          await logToServer("Updating existing song with ID", editingSong.id);
+          const { data, error } = await supabase
+            .from("music_library")
+            .update({
               title: formData.title,
               artist: formData.artist,
-              image_url,
-              audio_url,
-              genre: formData.genre,
-            },
-          ])
-          .select();
-        if (!error && data && data[0]) {
-          setSongs([...songs, data[0]]);
+              image_url: formData.image_url,
+              audio_url: formData.audio_url,
+              category: formData.genre,
+            })
+            .eq("id", editingSong.id)
+            .select();
+          await logToServer("Update response", { data, error });
+          if (error) {
+            await logToServer("Update error", error);
+            setIsSaving(false);
+            setAlert({
+              type: "error",
+              message: "Error updating song: " + error.message,
+            });
+            setTimeout(() => setAlert(null), 3000);
+            return;
+          }
+          if (data && data[0]) {
+            setSongs(
+              songs.map((song) =>
+                song.id === editingSong.id ? data[0] : song,
+              ),
+            );
+            setIsSaving(false);
+            setSuccessMessage("Song updated successfully!");
+            setSuccessModal(true);
+            setIsDialogOpen(false);
+          }
+        } else {
+          // Insert
+          await logToServer("Adding new song with data", formData);
+          const { data, error } = await supabase
+            .from("music_library")
+            .insert([
+              {
+                title: formData.title,
+                artist: formData.artist,
+                image_url: formData.image_url,
+                audio_url: formData.audio_url,
+                category: formData.genre,
+              },
+            ])
+            .select();
+          await logToServer("Insert response", { data, error });
+          if (error) {
+            await logToServer("Insert error", error);
+            setIsSaving(false);
+            setAlert({
+              type: "error",
+              message: "Error adding song: " + error.message,
+            });
+            setTimeout(() => setAlert(null), 3000);
+            return;
+          }
+          if (data && data[0]) {
+            await logToServer("Song added successfully", data[0]);
+            setSongs([...songs, data[0]]);
+            setIsSaving(false);
+            setSuccessMessage(
+              `"${formData.title}" has been added successfully!`,
+            );
+            setSuccessModal(true);
+            setIsDialogOpen(false);
+            // Reset form
+            setFormData({
+              title: "",
+              artist: "",
+              genre: "",
+              image_url: "",
+              audio_url: "",
+              isUploadingImage: false,
+              isUploadingAudio: false,
+            });
+            setEditingSong(null);
+          }
         }
+      } catch (error) {
+        setIsSaving(false);
+        await logToServer("Unexpected error", error);
+        setAlert({
+          type: "error",
+          message: "An unexpected error occurred. Please try again.",
+        });
+        setTimeout(() => setAlert(null), 3000);
       }
+    } else {
+      setIsSaving(false);
+      await logToServer("Supabase client not initialized");
     }
-    setIsDialogOpen(false);
   };
 
-  const handleDeleteSong = (songId: string) => {
-    setSongs(songs.filter((song) => song.id !== songId));
+  const handleDeleteSong = async (songId: number) => {
+    if (!supabase) {
+      setAlert({
+        type: "error",
+        message: "Database not initialized",
+      });
+      setTimeout(() => setAlert(null), 3000);
+      return;
+    }
+
+    try {
+      // Delete from Supabase
+      const { error } = await supabase
+        .from("music_library")
+        .delete()
+        .eq("id", songId);
+
+      if (error) {
+        setAlert({
+          type: "error",
+          message: "Error deleting song: " + error.message,
+        });
+        setTimeout(() => setAlert(null), 3000);
+        return;
+      }
+
+      // Remove from local state
+      setSongs(songs.filter((song) => song.id !== songId));
+      setAlert({
+        type: "success",
+        message: "Song deleted successfully!",
+      });
+      setTimeout(() => setAlert(null), 3000);
+    } catch (error) {
+      setAlert({
+        type: "error",
+        message: "An error occurred while deleting the song",
+      });
+      setTimeout(() => setAlert(null), 3000);
+    }
   };
 
-  const handleApproveSong = (songId: string) => {
+  const handleApproveSong = (songId: number) => {
     setSongs(
       songs.map((song) =>
-        song.id === songId ? { ...song, status: "Approved" as const } : song
-      )
+        song.id === songId ? { ...song, status: "Approved" as const } : song,
+      ),
     );
   };
 
@@ -249,6 +385,150 @@ export default function MusicUpdatePage() {
     }
   };
 
+  const handleImageFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file size (10MB max)
+      const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+      if (file.size > maxSize) {
+        setAlert({
+          type: "error",
+          message: `Image file is too large. Maximum size is 10MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB`,
+        });
+        setTimeout(() => setAlert(null), 3000);
+        return;
+      }
+
+      setFormData({ ...formData, isUploadingImage: true });
+      setImageProgress(0);
+
+      try {
+        const formDataUpload = new FormData();
+        formDataUpload.append("file", file);
+        formDataUpload.append("fileType", "image");
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener("progress", (event) => {
+          if (event.lengthComputable) {
+            const progress = (event.loaded / event.total) * 100;
+            setImageProgress(progress);
+          }
+        });
+
+        xhr.addEventListener("load", () => {
+          if (xhr.status === 200) {
+            const response = JSON.parse(xhr.responseText);
+            setFormData({
+              ...formData,
+              image_url: response.secure_url,
+              isUploadingImage: false,
+            });
+            setImageProgress(0);
+            setAlert({
+              type: "success",
+              message: "Image uploaded successfully!",
+            });
+            setTimeout(() => setAlert(null), 3000);
+          }
+        });
+
+        xhr.addEventListener("error", () => {
+          setFormData({ ...formData, isUploadingImage: false });
+          setAlert({
+            type: "error",
+            message: "Image upload failed",
+          });
+          setTimeout(() => setAlert(null), 3000);
+        });
+
+        xhr.open("POST", "/api/upload");
+        xhr.send(formDataUpload);
+      } catch (error) {
+        setFormData({ ...formData, isUploadingImage: false });
+        setAlert({
+          type: "error",
+          message: "Image upload failed",
+        });
+        setTimeout(() => setAlert(null), 3000);
+      }
+    }
+  };
+
+  const handleAudioFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file size (10MB max)
+      const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+      if (file.size > maxSize) {
+        setAlert({
+          type: "error",
+          message: `Audio file is too large. Maximum size is 10MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB`,
+        });
+        setTimeout(() => setAlert(null), 3000);
+        return;
+      }
+
+      setFormData({ ...formData, isUploadingAudio: true });
+      setAudioProgress(0);
+
+      try {
+        const formDataUpload = new FormData();
+        formDataUpload.append("file", file);
+        formDataUpload.append("fileType", "audio");
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener("progress", (event) => {
+          if (event.lengthComputable) {
+            const progress = (event.loaded / event.total) * 100;
+            setAudioProgress(progress);
+          }
+        });
+
+        xhr.addEventListener("load", () => {
+          if (xhr.status === 200) {
+            const response = JSON.parse(xhr.responseText);
+            setFormData({
+              ...formData,
+              audio_url: response.secure_url,
+              isUploadingAudio: false,
+            });
+            setAudioProgress(0);
+            setAlert({
+              type: "success",
+              message: "Audio uploaded successfully!",
+            });
+            setTimeout(() => setAlert(null), 3000);
+          }
+        });
+
+        xhr.addEventListener("error", () => {
+          setFormData({ ...formData, isUploadingAudio: false });
+          setAlert({
+            type: "error",
+            message: "Audio upload failed",
+          });
+          setTimeout(() => setAlert(null), 3000);
+        });
+
+        xhr.open("POST", "/api/upload");
+        xhr.send(formDataUpload);
+      } catch (error) {
+        setFormData({ ...formData, isUploadingAudio: false });
+        setAlert({
+          type: "error",
+          message: "Audio upload failed",
+        });
+        setTimeout(() => setAlert(null), 3000);
+      }
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -259,6 +539,15 @@ export default function MusicUpdatePage() {
 
   return (
     <div className="space-y-6">
+      {alert && (
+        <div
+          className={`fixed top-4 right-4 p-4 rounded-lg text-white z-50 ${
+            alert.type === "success" ? "bg-green-500" : "bg-red-500"
+          }`}
+        >
+          {alert.message}
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
         <div className="space-y-2 flex-1">
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
@@ -284,13 +573,13 @@ export default function MusicUpdatePage() {
           <DialogTrigger asChild>
             <Button
               onClick={handleAddSong}
-              className="transition-opacity duration-150 hover:opacity-80 active:opacity-60"
+              className="transition-all duration-200 hover:opacity-90 active:opacity-70 active:scale-95 hover:shadow-lg"
             >
               <Plus className="mr-2 h-4 w-4" />
               Add New Song
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingSong ? "Edit Song" : "Add New Song"}
@@ -305,9 +594,9 @@ export default function MusicUpdatePage() {
               <div className="grid gap-2">
                 <Label htmlFor="genre">Genre</Label>
                 <Select
-                  value={formData.genre}
+                  value={formData.genre || ""}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, genre: value as Song["genre"] })
+                    setFormData({ ...formData, genre: value })
                   }
                 >
                   <SelectTrigger>
@@ -334,18 +623,65 @@ export default function MusicUpdatePage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="artistImage">Artist Image</Label>
-                <Input
-                  id="artistImage"
+                <Label htmlFor="artistImage">Artist Image (required)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Max file size: 10MB
+                </p>
+                <input
+                  ref={imageInputRef}
                   type="file"
                   accept="image/*"
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      imageFile: e.target.files?.[0] || null,
-                    })
-                  }
+                  onChange={handleImageFileChange}
+                  className="hidden"
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={formData.isUploadingImage}
+                >
+                  {formData.isUploadingImage ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading to Cloudinary...
+                    </>
+                  ) : formData.image_url ? (
+                    "Change Image"
+                  ) : (
+                    "Upload Image"
+                  )}
+                </Button>
+                {formData.isUploadingImage && (
+                  <div className="mt-2">
+                    <Progress value={imageProgress} className="w-full" />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {Math.round(imageProgress)}%
+                    </p>
+                  </div>
+                )}
+                {formData.image_url && !formData.isUploadingImage && (
+                  <div className="mt-2">
+                    <img
+                      src={formData.image_url}
+                      alt="Preview"
+                      className="h-20 w-20 rounded object-cover border"
+                    />
+                    <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                      <svg
+                        className="w-3 h-3"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      Uploaded to Cloudinary
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="grid gap-2">
                 {/* Album removed, not in music_library table */}
@@ -362,23 +698,92 @@ export default function MusicUpdatePage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="songFile">Song File</Label>
-                <Input
-                  id="songFile"
+                <Label htmlFor="songFile">Song File (required)</Label>{" "}
+                <p className="text-xs text-muted-foreground">
+                  Max file size: 10MB
+                </p>{" "}
+                <input
+                  ref={audioInputRef}
                   type="file"
                   accept="audio/*"
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      audioFile: e.target.files?.[0] || null,
-                    })
-                  }
+                  onChange={handleAudioFileChange}
+                  className="hidden"
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => audioInputRef.current?.click()}
+                  disabled={formData.isUploadingAudio}
+                >
+                  {formData.isUploadingAudio ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading to Cloudinary...
+                    </>
+                  ) : formData.audio_url ? (
+                    "Change Audio"
+                  ) : (
+                    "Upload Audio"
+                  )}
+                </Button>
+                {formData.isUploadingAudio && (
+                  <div className="mt-2">
+                    <Progress value={audioProgress} className="w-full" />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {Math.round(audioProgress)}%
+                    </p>
+                  </div>
+                )}
+                {formData.audio_url && !formData.isUploadingAudio && (
+                  <div className="mt-2">
+                    <audio
+                      src={formData.audio_url}
+                      controls
+                      className="w-full h-8"
+                    />
+                    <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                      <svg
+                        className="w-3 h-3"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      Uploaded to Cloudinary
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit" onClick={handleSaveSong}>
-                {editingSong ? "Save Changes" : "Add Song"}
+              <Button
+                type="submit"
+                onClick={handleSaveSong}
+                disabled={
+                  isSaving ||
+                  formData.isUploadingImage ||
+                  formData.isUploadingAudio
+                }
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {editingSong ? "Saving..." : "Adding Song..."}
+                  </>
+                ) : formData.isUploadingImage || formData.isUploadingAudio ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading Files...
+                  </>
+                ) : editingSong ? (
+                  "Save Changes"
+                ) : (
+                  "Add Song"
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -488,6 +893,36 @@ export default function MusicUpdatePage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Success Modal */}
+      <Dialog open={successModal} onOpenChange={setSuccessModal}>
+        <DialogContent className="sm:max-w-md text-center">
+          <DialogHeader className="flex flex-col items-center">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+              <svg
+                className="w-8 h-8 text-green-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            </div>
+            <DialogTitle className="text-2xl">Success!</DialogTitle>
+          </DialogHeader>
+          <p className="text-gray-600 py-4">{successMessage}</p>
+          <DialogFooter className="flex justify-center">
+            <Button onClick={() => setSuccessModal(false)} className="w-full">
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
