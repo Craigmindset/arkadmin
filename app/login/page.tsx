@@ -49,13 +49,37 @@ function LoginPage() {
       const supabase = getSupabaseClient();
 
       // Supabase authentication
-      const { error: supabaseError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { data, error: supabaseError } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
 
       if (supabaseError) {
         setError(supabaseError.message || "Invalid email or password");
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if user has admin role
+      const user = data.user;
+      if (!user) {
+        setError("Authentication failed");
+        setIsLoading(false);
+        return;
+      }
+
+      // Fetch user profile to check role
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError || !profile || profile.role !== "admin") {
+        setError("Access denied. Admin privileges required.");
+        // Sign out the user since they don't have admin role
+        await supabase.auth.signOut();
         setIsLoading(false);
         return;
       }
