@@ -477,9 +477,18 @@ export default function MusicUpdatePage() {
       setAudioProgress(0);
 
       try {
+        // Upload directly to Cloudinary
+        const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+        const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+        
+        if (!cloudName || !uploadPreset) {
+          throw new Error("Cloudinary configuration missing");
+        }
+
         const formDataUpload = new FormData();
         formDataUpload.append("file", file);
-        formDataUpload.append("fileType", "audio");
+        formDataUpload.append("upload_preset", uploadPreset);
+        formDataUpload.append("folder", "arkoflight/music");
 
         const xhr = new XMLHttpRequest();
         
@@ -518,7 +527,7 @@ export default function MusicUpdatePage() {
               setTimeout(() => setAlert(null), 3000);
             }
           } else {
-            console.error("Upload failed with status:", xhr.status);
+            console.error("Upload failed with status:", xhr.status, xhr.responseText);
             setFormData({ ...formData, isUploadingAudio: false });
             setAlert({
               type: "error",
@@ -548,7 +557,8 @@ export default function MusicUpdatePage() {
           setTimeout(() => setAlert(null), 5000);
         });
 
-        xhr.open("POST", "/api/upload");
+        // Upload directly to Cloudinary
+        xhr.open("POST", `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`);
         xhr.send(formDataUpload);
       } catch (error) {
         console.error("Upload exception:", error);
