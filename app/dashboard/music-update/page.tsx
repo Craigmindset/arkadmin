@@ -482,6 +482,9 @@ export default function MusicUpdatePage() {
         formDataUpload.append("fileType", "audio");
 
         const xhr = new XMLHttpRequest();
+        
+        // Set timeout to 5 minutes for large audio files
+        xhr.timeout = 300000; // 5 minutes in milliseconds
 
         xhr.upload.addEventListener("progress", (event) => {
           if (event.lengthComputable) {
@@ -492,37 +495,67 @@ export default function MusicUpdatePage() {
 
         xhr.addEventListener("load", () => {
           if (xhr.status === 200) {
-            const response = JSON.parse(xhr.responseText);
-            setFormData({
-              ...formData,
-              audio_url: response.secure_url,
-              isUploadingAudio: false,
-            });
-            setAudioProgress(0);
+            try {
+              const response = JSON.parse(xhr.responseText);
+              setFormData({
+                ...formData,
+                audio_url: response.secure_url,
+                isUploadingAudio: false,
+              });
+              setAudioProgress(0);
+              setAlert({
+                type: "success",
+                message: "Audio uploaded successfully!",
+              });
+              setTimeout(() => setAlert(null), 3000);
+            } catch (e) {
+              console.error("Failed to parse response:", e);
+              setFormData({ ...formData, isUploadingAudio: false });
+              setAlert({
+                type: "error",
+                message: "Audio upload failed: Invalid response",
+              });
+              setTimeout(() => setAlert(null), 3000);
+            }
+          } else {
+            console.error("Upload failed with status:", xhr.status);
+            setFormData({ ...formData, isUploadingAudio: false });
             setAlert({
-              type: "success",
-              message: "Audio uploaded successfully!",
+              type: "error",
+              message: `Audio upload failed: Server returned ${xhr.status}`,
             });
             setTimeout(() => setAlert(null), 3000);
           }
         });
 
         xhr.addEventListener("error", () => {
+          console.error("XHR error event triggered");
           setFormData({ ...formData, isUploadingAudio: false });
           setAlert({
             type: "error",
-            message: "Audio upload failed",
+            message: "Audio upload failed: Network error",
           });
           setTimeout(() => setAlert(null), 3000);
+        });
+        
+        xhr.addEventListener("timeout", () => {
+          console.error("XHR timeout event triggered");
+          setFormData({ ...formData, isUploadingAudio: false });
+          setAlert({
+            type: "error",
+            message: "Audio upload timed out. Please try a smaller file or check your connection.",
+          });
+          setTimeout(() => setAlert(null), 5000);
         });
 
         xhr.open("POST", "/api/upload");
         xhr.send(formDataUpload);
       } catch (error) {
+        console.error("Upload exception:", error);
         setFormData({ ...formData, isUploadingAudio: false });
         setAlert({
           type: "error",
-          message: "Audio upload failed",
+          message: "Audio upload failed: " + String(error),
         });
         setTimeout(() => setAlert(null), 3000);
       }
