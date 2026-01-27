@@ -7,7 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Ark of Light - Admin Panel",
+  title: "Ark of Light for all Nations - Admin Panel",
   description: "Admin panel for Ark of Light mobile app",
 };
 
