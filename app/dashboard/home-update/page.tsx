@@ -23,7 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Edit, Save, Plus, ImageIcon } from "lucide-react";
+import { Edit, Save, Plus, ImageIcon, Trash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
@@ -37,7 +37,7 @@ interface HomeCard {
 }
 
 interface SliderImage {
-  id: string;
+  id: number;
   title: string;
   imageUrl: string;
   buttonUrl: string;
@@ -104,7 +104,7 @@ export default function HomeUpdatePage() {
     imageFile: null as File | null,
     imageUrl: "",
     order: 1,
-    id: "",
+    id: 0,
   });
   const [isSlideDialogOpen, setIsSlideDialogOpen] = useState(false);
 
@@ -137,7 +137,7 @@ export default function HomeUpdatePage() {
       const { data, error } = await supabase
         .from("slider")
         .select("id, title, image_url, button_link, sort_order")
-        .in("id", [1, 2, 3, 4]);
+        .order("sort_order", { ascending: true });
       if (error) {
         setSliderImages([]);
       } else {
@@ -155,6 +155,36 @@ export default function HomeUpdatePage() {
 
     fetchHomeCards();
     fetchSlides();
+  }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("public:slider")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "slider" },
+        async () => {
+          const { data, error } = await supabase
+            .from("slider")
+            .select("id, title, image_url, button_link, sort_order")
+            .order("sort_order", { ascending: true });
+          if (!error) {
+            const slides = (data || []).map((slide) => ({
+              id: slide.id,
+              title: slide.title,
+              imageUrl: slide.image_url,
+              buttonUrl: slide.button_link,
+              order: slide.sort_order,
+            }));
+            setSliderImages(slides);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleEditCard = (card: HomeCard) => {
@@ -253,6 +283,33 @@ export default function HomeUpdatePage() {
     setEditingCard(null);
     setIsLoading(false);
     alert(editingCard ? "Card updated!" : "Card added!");
+  };
+
+  const handleDeleteCard = async (card: HomeCard) => {
+    const confirmed = window.confirm(
+      `Delete "${card.title}"? This action cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setIsLoading(true);
+    const { error } = await supabase
+      .from("home_slider2")
+      .delete()
+      .eq("id", card.id);
+    if (error) {
+      alert(`Failed to delete card: ${error.message}`);
+      setIsLoading(false);
+      return;
+    }
+    setHomeCards((prev) => prev.filter((c) => c.id !== card.id));
+    setIsLoading(false);
+    alert("Card deleted!");
+  };
+
+  const handleDeleteCurrentCard = async () => {
+    if (!editingCard) return;
+    await handleDeleteCard(editingCard);
+    setIsCardDialogOpen(false);
+    setEditingCard(null);
   };
 
   const handleCardImageUpload = async (
@@ -389,7 +446,7 @@ export default function HomeUpdatePage() {
     // Update local state
     let updatedSlides = [...sliderImages];
     const updatedSlide = {
-      id: dbData?.[0]?.id || slideFormData.id || `SLIDE${slideFormData.order}`,
+      id: dbData?.[0]?.id ?? slideFormData.id ?? 0,
       title: slideFormData.title,
       imageUrl,
       buttonUrl: slideFormData.buttonUrl,
@@ -422,17 +479,47 @@ export default function HomeUpdatePage() {
       // New slide (find next available order)
       const usedOrders = sliderImages.map((s) => s.order);
       let nextOrder = 1;
-      while (usedOrders.includes(nextOrder) && nextOrder <= 4) nextOrder++;
+      while (usedOrders.includes(nextOrder)) nextOrder++;
       setSlideFormData({
         title: "",
         buttonUrl: "",
         imageFile: null,
         imageUrl: "",
         order: nextOrder,
-        id: "",
+        id: 0,
       });
     }
     setIsSlideDialogOpen(true);
+  };
+
+  const handleDeleteSlide = async (slide: SliderImage) => {
+    const confirmed = window.confirm(
+      `Delete Slide ${slide.order}? This action cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setIsLoading(true);
+    const { error } = await supabase.from("slider").delete().eq("id", slide.id);
+    if (error) {
+      alert(`Failed to delete slide: ${error.message}`);
+      setIsLoading(false);
+      return;
+    }
+    setSliderImages((prev) => prev.filter((s) => s.id !== slide.id));
+    setIsLoading(false);
+    alert("Slide deleted!");
+  };
+
+  const handleDeleteCurrentSlide = async () => {
+    if (!slideFormData.id) return;
+    const slide: SliderImage = {
+      id: slideFormData.id,
+      title: slideFormData.title,
+      imageUrl: slideFormData.imageUrl,
+      buttonUrl: slideFormData.buttonUrl,
+      order: slideFormData.order,
+    };
+    await handleDeleteSlide(slide);
+    setIsSlideDialogOpen(false);
   };
 
   if (isLoading) {
@@ -493,14 +580,27 @@ export default function HomeUpdatePage() {
                       <div className="absolute top-2 left-2">
                         <Badge variant="secondary">Slide {slide.order}</Badge>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="absolute top-2 right-2"
-                        onClick={() => openSlideDialog(slide)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                      <div className="absolute top-2 right-2 flex gap-2">
+                        <Button
+                          size="icon"
+                          variant="destructive"
+                          className="shadow-md"
+                          onClick={() => handleDeleteSlide(slide)}
+                          title="Delete slide"
+                          aria-label="Delete slide"
+                        >
+                          <Trash className="h-5 w-5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => openSlideDialog(slide)}
+                          title="Edit slide"
+                          aria-label="Edit slide"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                     <div>
                       <h4 className="font-medium text-sm">{slide.title}</h4>
@@ -540,14 +640,26 @@ export default function HomeUpdatePage() {
                   <Badge variant={card.isActive ? "default" : "secondary"}>
                     {card.isActive ? "Active" : "Inactive"}
                   </Badge>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleEditCard(card)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Edit className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      size="icon"
+                      variant="destructive"
+                      className="shadow-md"
+                      onClick={() => handleDeleteCard(card)}
+                      title="Delete card"
+                      aria-label="Delete card"
+                    >
+                      <Trash className="h-5 w-5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleEditCard(card)}
+                      aria-label="Edit card"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -662,6 +774,12 @@ export default function HomeUpdatePage() {
             </div>
           </div>
           <DialogFooter>
+            {editingCard ? (
+              <Button variant="destructive" onClick={handleDeleteCurrentCard}>
+                <Trash className="mr-2 h-4 w-4" />
+                Delete
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               onClick={() => setIsCardDialogOpen(false)}
@@ -740,6 +858,12 @@ export default function HomeUpdatePage() {
             </div>
           </div>
           <DialogFooter>
+            {slideFormData.id ? (
+              <Button variant="destructive" onClick={handleDeleteCurrentSlide}>
+                <Trash className="mr-2 h-4 w-4" />
+                Delete
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               onClick={() => setIsSlideDialogOpen(false)}
