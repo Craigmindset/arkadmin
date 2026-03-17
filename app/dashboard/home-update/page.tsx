@@ -214,6 +214,18 @@ export default function HomeUpdatePage() {
 
   const handleSaveCard = async () => {
     setIsLoading(true);
+    const title = cardFormData.title.trim();
+    const description = cardFormData.description.trim();
+    if (!title || title.length > 45) {
+      alert("Title is required and must be 45 characters or less");
+      setIsLoading(false);
+      return;
+    }
+    if (!description || description.length > 70) {
+      alert("Description is required and must be 70 characters or less");
+      setIsLoading(false);
+      return;
+    }
     let imageUrl = cardFormData.imageUrl;
 
     // imageUrl is already set from Cloudinary upload, no need for additional upload
@@ -710,7 +722,12 @@ export default function HomeUpdatePage() {
                   setCardFormData({ ...cardFormData, title: e.target.value })
                 }
                 placeholder="Enter card title"
+                maxLength={45}
+                required
               />
+              <div className="text-xs text-muted-foreground text-right">
+                {cardFormData.title.trim().length}/45
+              </div>
             </div>
 
             <div className="grid gap-2">
@@ -726,7 +743,12 @@ export default function HomeUpdatePage() {
                 }
                 placeholder="Enter card description"
                 rows={3}
+                maxLength={70}
+                required
               />
+              <div className="text-xs text-muted-foreground text-right">
+                {cardFormData.description.trim().length}/70
+              </div>
             </div>
 
             <div className="grid gap-2">
@@ -786,7 +808,16 @@ export default function HomeUpdatePage() {
             >
               Cancel
             </Button>
-            <Button onClick={handleSaveCard}>
+            <Button
+              onClick={handleSaveCard}
+              disabled={
+                !cardFormData.title.trim() ||
+                cardFormData.title.trim().length > 45 ||
+                !cardFormData.description.trim() ||
+                cardFormData.description.trim().length > 70 ||
+                !(cardFormData.imageUrl || cardFormData.imageFile)
+              }
+            >
               <Save className="mr-2 h-4 w-4" />
               Save Changes
             </Button>
