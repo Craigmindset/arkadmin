@@ -1,179 +1,122 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useState, useEffect } from "react";
+import { createClient } from "@supabase/supabase-js";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { MessageSquare, Send, Clock, CheckCircle, Heart } from "lucide-react"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { MessageSquare, FileDown } from "lucide-react";
 
 interface PrayerRequest {
-  id: string
-  userName: string
-  userEmail: string
-  userAvatar: string
-  subject: string
-  prayerRequest: string
-  category: "Personal" | "Family" | "Health" | "Financial" | "Spiritual" | "Other"
-  priority: "Low" | "Medium" | "High" | "Urgent"
-  status: "Pending" | "In Progress" | "Responded" | "Closed"
-  submittedAt: string
-  respondedAt?: string
-  adminResponse?: string
-  adminName?: string
+  id: string;
+  userName: string;
+  userAvatar: string;
+  request: string;
+  submittedAt: string;
+  sortOrder: number;
 }
 
-const mockPrayerRequests: PrayerRequest[] = [
-  {
-    id: "PR001",
-    userName: "Sarah Johnson",
-    userEmail: "sarah.johnson@example.com",
-    userAvatar: "/placeholder.svg?height=40&width=40",
-    subject: "Healing for my mother",
-    prayerRequest:
-      "Please pray for my mother who is undergoing surgery next week. We need God's healing touch and guidance for the medical team.",
-    category: "Health",
-    priority: "High",
-    status: "Pending",
-    submittedAt: "2024-01-20T14:30:00",
-  },
-  {
-    id: "PR002",
-    userName: "Michael Davis",
-    userEmail: "michael.davis@example.com",
-    userAvatar: "/placeholder.svg?height=40&width=40",
-    subject: "Job opportunity",
-    prayerRequest:
-      "I've been unemployed for 3 months. Please pray that God opens doors for the right job opportunity for me and my family.",
-    category: "Financial",
-    priority: "Medium",
-    status: "Responded",
-    submittedAt: "2024-01-19T10:15:00",
-    respondedAt: "2024-01-19T16:20:00",
-    adminResponse:
-      "We are praying for God's provision and guidance in your job search. Trust in His perfect timing and continue to seek His will. May He open the right doors for you.",
-    adminName: "Pastor John",
-  },
-  {
-    id: "PR003",
-    userName: "Emily Wilson",
-    userEmail: "emily.wilson@example.com",
-    userAvatar: "/placeholder.svg?height=40&width=40",
-    subject: "Marriage restoration",
-    prayerRequest:
-      "My husband and I are going through a difficult time. Please pray for restoration and healing in our marriage.",
-    category: "Family",
-    priority: "High",
-    status: "In Progress",
-    submittedAt: "2024-01-18T09:45:00",
-  },
-  {
-    id: "PR004",
-    userName: "David Brown",
-    userEmail: "david.brown@example.com",
-    userAvatar: "/placeholder.svg?height=40&width=40",
-    subject: "Spiritual growth",
-    prayerRequest:
-      "I feel distant from God lately. Please pray for my spiritual growth and that I may draw closer to Him through prayer and study.",
-    category: "Spiritual",
-    priority: "Medium",
-    status: "Pending",
-    submittedAt: "2024-01-17T20:30:00",
-  },
-]
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function PrayerSubmissionPage() {
-  const [prayerRequests, setPrayerRequests] = useState<PrayerRequest[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [isResponseDialogOpen, setIsResponseDialogOpen] = useState(false)
-  const [selectedRequest, setSelectedRequest] = useState<PrayerRequest | null>(null)
-  const [responseForm, setResponseForm] = useState({
-    response: "",
-    adminName: "",
-  })
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [priorityFilter, setPriorityFilter] = useState<string>("all")
+  const [prayerRequests, setPrayerRequests] = useState<PrayerRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const handleExportPdf = () => {
+    if (typeof window === "undefined") return;
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) return;
+    printWindow.document.write("<html><head><title>Prayer Requests</title>");
+    printWindow.document.write(
+      "<style>body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:16px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;font-size:12px;} th{text-align:left;background:#f3f4f6;} img{display:none;}</style>",
+    );
+    printWindow.document.write("</head><body>");
+    printWindow.document.write("<h2>Prayer Requests</h2>");
+
+    const headerHtml =
+      "<table><thead><tr><th>User</th><th>Request</th><th>Submitted</th></tr></thead><tbody>";
+    const rowsHtml = prayerRequests
+      .map((req) => {
+        const safeUser = req.userName || "";
+        const safeRequest = req.request || "";
+        const safeDate = formatDate(req.submittedAt);
+        return `<tr><td>${safeUser}</td><td>${safeRequest}</td><td>${safeDate}</td></tr>`;
+      })
+      .join("");
+
+    printWindow.document.write(headerHtml + rowsHtml + "</tbody></table>");
+    printWindow.document.write("</body></html>");
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setPrayerRequests(mockPrayerRequests)
-      setIsLoading(false)
-    }, 1000)
-  }, [])
+    const fetchRequests = async () => {
+      setIsLoading(true);
 
-  const handleRespondToPrayer = (request: PrayerRequest) => {
-    setSelectedRequest(request)
-    setResponseForm({
-      response: request.adminResponse || "",
-      adminName: request.adminName || "",
-    })
-    setIsResponseDialogOpen(true)
-  }
+      const baseSelect =
+        "id, submitted_by, request, date_submitted, sort_order";
 
-  const handleSendResponse = async () => {
-    if (selectedRequest) {
-      const updatedRequest = {
-        ...selectedRequest,
-        status: "Responded" as const,
-        adminResponse: responseForm.response,
-        adminName: responseForm.adminName,
-        respondedAt: new Date().toISOString(),
+      let rows: any[] | null = null;
+
+      const { data, error } = await supabase
+        .from("g20_prayers")
+        .select(`${baseSelect}, user_id, profiles ( images )`)
+        .order("date_submitted", { ascending: false });
+
+      if (error) {
+        console.error("Failed to load g20_prayers with profiles join", error);
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from("g20_prayers")
+          .select(baseSelect)
+          .order("date_submitted", { ascending: false });
+
+        if (fallbackError) {
+          console.error("Failed to load g20_prayers fallback", fallbackError);
+          setPrayerRequests([]);
+          setIsLoading(false);
+          return;
+        }
+        rows = fallbackData ?? [];
+      } else {
+        rows = data ?? [];
       }
 
-      setPrayerRequests(prayerRequests.map((request) => (request.id === selectedRequest.id ? updatedRequest : request)))
+      const mapped: PrayerRequest[] = rows.map((row: any) => {
+        const avatarFromProfile = row.profiles?.images as string | undefined;
+        return {
+          id: row.id?.toString() ?? "",
+          userName: row.submitted_by ?? "Unknown",
+          userAvatar:
+            avatarFromProfile || "/placeholder.svg?height=40&width=40",
+          request: row.request ?? "",
+          submittedAt: row.date_submitted ?? new Date().toISOString(),
+          sortOrder: row.sort_order ?? 0,
+        };
+      });
 
-      // Here you would send a push notification to the user
-      console.log("Sending notification to user:", selectedRequest.userEmail)
-      console.log("Response:", responseForm.response)
+      setPrayerRequests(mapped);
+      setIsLoading(false);
+    };
 
-      setIsResponseDialogOpen(false)
-      setSelectedRequest(null)
-    }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Pending":
-        return "bg-yellow-100 text-yellow-800"
-      case "In Progress":
-        return "bg-blue-100 text-blue-800"
-      case "Responded":
-        return "bg-green-100 text-green-800"
-      case "Closed":
-        return "bg-gray-100 text-gray-800"
-      default:
-        return "bg-gray-100 text-gray-800"
-    }
-  }
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "Low":
-        return "bg-gray-100 text-gray-800"
-      case "Medium":
-        return "bg-blue-100 text-blue-800"
-      case "High":
-        return "bg-orange-100 text-orange-800"
-      case "Urgent":
-        return "bg-red-100 text-red-800"
-      default:
-        return "bg-gray-100 text-gray-800"
-    }
-  }
+    fetchRequests();
+  }, []);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString("en-US", {
@@ -182,220 +125,114 @@ export default function PrayerSubmissionPage() {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-    })
-  }
+    });
+  };
 
-  const filteredRequests = prayerRequests.filter((request) => {
-    const statusMatch = statusFilter === "all" || request.status === statusFilter
-    const priorityMatch = priorityFilter === "all" || request.priority === priorityFilter
-    return statusMatch && priorityMatch
-  })
+  const filteredRequests = prayerRequests;
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
-    )
+    );
   }
 
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">Prayer Submissions</h1>
+        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+          Prayer Submissions
+        </h1>
         <p className="text-sm md:text-base text-muted-foreground">
-          Manage prayer requests from users and send personalized responses with direct notifications.
+          Manage prayer requests from users and send personalized responses with
+          direct notifications.
         </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Requests
+            </CardTitle>
             <MessageSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{prayerRequests.length}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{prayerRequests.filter((r) => r.status === "Pending").length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Responded</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{prayerRequests.filter((r) => r.status === "Responded").length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">High Priority</CardTitle>
-            <Heart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {prayerRequests.filter((r) => r.priority === "High" || r.priority === "Urgent").length}
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Prayer Requests</CardTitle>
-          <CardDescription>Review and respond to prayer requests from app users</CardDescription>
-          <div className="flex flex-col sm:flex-row gap-4 mt-4">
-            <div className="flex items-center space-x-2">
-              <Label htmlFor="status-filter">Status:</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="Pending">Pending</SelectItem>
-                  <SelectItem value="In Progress">In Progress</SelectItem>
-                  <SelectItem value="Responded">Responded</SelectItem>
-                  <SelectItem value="Closed">Closed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Label htmlFor="priority-filter">Priority:</Label>
-              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Priority</SelectItem>
-                  <SelectItem value="Low">Low</SelectItem>
-                  <SelectItem value="Medium">Medium</SelectItem>
-                  <SelectItem value="High">High</SelectItem>
-                  <SelectItem value="Urgent">Urgent</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Prayer Requests</CardTitle>
+            <CardDescription>
+              Review prayer requests submitted by G20 users
+            </CardDescription>
           </div>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            className="inline-flex items-center gap-2 rounded-md border px-3 py-1 text-xs font-medium hover:bg-accent"
+          >
+            <FileDown className="h-4 w-4" />
+            Export PDF
+          </button>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Submitted</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRequests.map((request) => (
-                <TableRow key={request.id}>
-                  <TableCell className="flex items-center space-x-3">
-                    <Avatar>
-                      <AvatarImage src={request.userAvatar || "/placeholder.svg"} alt={request.userName} />
-                      <AvatarFallback>
-                        {request.userName
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <div className="font-medium">{request.userName}</div>
-                      <div className="text-sm text-gray-600">{request.userEmail}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="max-w-[200px]">
-                      <div className="font-medium">{request.subject}</div>
-                      <div className="text-sm text-gray-600 truncate">{request.prayerRequest}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{request.category}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={getPriorityColor(request.priority)}>{request.priority}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={getStatusColor(request.status)}>{request.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-sm">{formatDate(request.submittedAt)}</TableCell>
-                  <TableCell>
-                    <Button size="sm" onClick={() => handleRespondToPrayer(request)}>
-                      <MessageSquare className="h-4 w-4 mr-1" />
-                      {request.status === "Responded" ? "Edit" : "Respond"}
-                    </Button>
-                  </TableCell>
+          <div id="prayer-requests-table">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead>Request</TableHead>
+                  <TableHead>Submitted</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredRequests.map((request) => (
+                  <TableRow key={request.id}>
+                    <TableCell className="flex items-center space-x-3">
+                      <Avatar>
+                        <AvatarImage
+                          src={request.userAvatar || "/placeholder.svg"}
+                          alt={request.userName}
+                        />
+                        <AvatarFallback>
+                          {request.userName
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <div className="font-medium">{request.userName}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="max-w-[260px]">
+                        <div
+                          className="text-sm text-gray-600 truncate"
+                          title={request.request}
+                        >
+                          {request.request.length > 30
+                            ? `${request.request.slice(0, 30)}...`
+                            : request.request}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {formatDate(request.submittedAt)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
-
-      {/* Response Dialog */}
-      <Dialog open={isResponseDialogOpen} onOpenChange={setIsResponseDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Respond to Prayer Request</DialogTitle>
-            <DialogDescription>Send a personalized response that will notify the user directly.</DialogDescription>
-          </DialogHeader>
-          {selectedRequest && (
-            <div className="space-y-4">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium mb-2">Prayer Request:</h4>
-                <p className="text-sm text-gray-700 mb-2">
-                  <strong>Subject:</strong> {selectedRequest.subject}
-                </p>
-                <p className="text-sm text-gray-700">{selectedRequest.prayerRequest}</p>
-              </div>
-              <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="adminName">Your Name</Label>
-                  <Input
-                    id="adminName"
-                    value={responseForm.adminName}
-                    onChange={(e) => setResponseForm({ ...responseForm, adminName: e.target.value })}
-                    placeholder="Enter your name (e.g., Pastor John)"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="response">Response Message</Label>
-                  <Textarea
-                    id="response"
-                    value={responseForm.response}
-                    onChange={(e) => setResponseForm({ ...responseForm, response: e.target.value })}
-                    placeholder="Write your prayer response and encouragement..."
-                    rows={6}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsResponseDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSendResponse}>
-              <Send className="mr-2 h-4 w-4" />
-              Send Response & Notify User
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
-  )
+  );
 }

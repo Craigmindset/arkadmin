@@ -34,6 +34,7 @@ interface HomeCard {
   imageUrl: string;
   buttonUrl: string;
   isActive: boolean;
+  order: number;
 }
 
 interface SliderImage {
@@ -43,37 +44,6 @@ interface SliderImage {
   buttonUrl: string;
   order: number;
 }
-
-const mockHomeCards: HomeCard[] = [
-  {
-    id: 1,
-    title: "Welcome to Ark of Light",
-    imageUrl: "/placeholder.svg?height=200&width=300",
-    buttonUrl: "https://arkoflight.com/welcome",
-    isActive: true,
-  },
-  {
-    id: 2,
-    title: "Sunday Service Live",
-    imageUrl: "/placeholder.svg?height=200&width=300",
-    buttonUrl: "https://arkoflight.com/live",
-    isActive: true,
-  },
-  {
-    id: 3,
-    title: "Prayer Requests",
-    imageUrl: "/placeholder.svg?height=200&width=300",
-    buttonUrl: "https://arkoflight.com/prayer",
-    isActive: false,
-  },
-  {
-    id: 4,
-    title: "Community Events",
-    imageUrl: "/placeholder.svg?height=200&width=300",
-    buttonUrl: "https://arkoflight.com/events",
-    isActive: true,
-  },
-];
 
 // Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -95,6 +65,7 @@ export default function HomeUpdatePage() {
     imageUrl: "",
     buttonUrl: "",
     imageFile: null as File | null,
+    order: "",
   });
   // For per-slide editing
   const [editingSlide, setEditingSlide] = useState<SliderImage | null>(null);
@@ -114,17 +85,20 @@ export default function HomeUpdatePage() {
       setIsLoading(true);
       const { data, error } = await supabase
         .from("home_slider2")
-        .select("id, title, description, image_url, button_link, active");
+        .select(
+          "id, title, description, image_url, button_link, active, sort_order",
+        );
       if (error) {
         setHomeCards([]);
       } else {
-        const cards = (data || []).map((card) => ({
+        const cards = (data || []).map((card, index) => ({
           id: card.id,
           title: card.title,
           description: card.description,
           imageUrl: card.image_url,
           buttonUrl: card.button_link,
           isActive: card.active ?? true,
+          order: card.sort_order ?? index + 1,
         }));
         setHomeCards(cards);
       }
@@ -195,6 +169,7 @@ export default function HomeUpdatePage() {
       imageUrl: card.imageUrl,
       buttonUrl: card.buttonUrl,
       imageFile: null,
+      order: card.order?.toString() ?? "",
     });
     setIsCardDialogOpen(true);
   };
@@ -202,12 +177,18 @@ export default function HomeUpdatePage() {
   // Add new card
   const handleAddCard = () => {
     setEditingCard(null);
+    const usedOrders = homeCards
+      .map((c) => c.order)
+      .filter((o) => typeof o === "number");
+    let nextOrder = 1;
+    while (usedOrders.includes(nextOrder)) nextOrder++;
     setCardFormData({
       title: "",
       description: "",
       imageUrl: "",
       buttonUrl: "",
       imageFile: null,
+      order: nextOrder.toString(),
     });
     setIsCardDialogOpen(true);
   };
@@ -216,6 +197,7 @@ export default function HomeUpdatePage() {
     setIsLoading(true);
     const title = cardFormData.title.trim();
     const description = cardFormData.description.trim();
+    const orderNumber = Number(cardFormData.order);
     if (!title || title.length > 45) {
       alert("Title is required and must be 45 characters or less");
       setIsLoading(false);
@@ -223,6 +205,11 @@ export default function HomeUpdatePage() {
     }
     if (!description || description.length > 70) {
       alert("Description is required and must be 70 characters or less");
+      setIsLoading(false);
+      return;
+    }
+    if (!cardFormData.order || Number.isNaN(orderNumber) || orderNumber <= 0) {
+      alert("Banner position is required and must be a positive number");
       setIsLoading(false);
       return;
     }
@@ -246,6 +233,7 @@ export default function HomeUpdatePage() {
           description: cardFormData.description,
           button_link: cardFormData.buttonUrl,
           active: editingCard.isActive,
+          sort_order: orderNumber,
         })
         .eq("id", editingCard.id)
         .select();
@@ -260,6 +248,7 @@ export default function HomeUpdatePage() {
             description: cardFormData.description,
             button_link: cardFormData.buttonUrl,
             active: true,
+            sort_order: orderNumber,
           },
         ])
         .select();
@@ -279,6 +268,7 @@ export default function HomeUpdatePage() {
       imageUrl,
       buttonUrl: cardFormData.buttonUrl,
       isActive: editingCard ? editingCard.isActive : true,
+      order: orderNumber,
     };
     if (editingCard) {
       const idx = updatedCards.findIndex((c) => c.id === editingCard.id);
@@ -421,6 +411,13 @@ export default function HomeUpdatePage() {
       return;
     }
 
+    const orderNumber = Number(slideFormData.order);
+    if (!orderNumber || Number.isNaN(orderNumber) || orderNumber <= 0) {
+      alert("Banner position is required and must be a positive number");
+      setIsLoading(false);
+      return;
+    }
+
     // If slide has an id, update; else insert
     let dbResult;
     if (slideFormData.id) {
@@ -431,7 +428,7 @@ export default function HomeUpdatePage() {
           title: slideFormData.title,
           button_link: slideFormData.buttonUrl,
           active: true,
-          sort_order: slideFormData.order,
+          sort_order: orderNumber,
         })
         .eq("id", slideFormData.id)
         .select();
@@ -444,7 +441,7 @@ export default function HomeUpdatePage() {
             title: slideFormData.title,
             button_link: slideFormData.buttonUrl,
             active: true,
-            sort_order: slideFormData.order,
+            sort_order: orderNumber,
           },
         ])
         .select();
@@ -462,7 +459,7 @@ export default function HomeUpdatePage() {
       title: slideFormData.title,
       imageUrl,
       buttonUrl: slideFormData.buttonUrl,
-      order: slideFormData.order,
+      order: orderNumber,
     };
     const idx = updatedSlides.findIndex((s) => s.order === slideFormData.order);
     if (idx !== -1) {
@@ -589,9 +586,13 @@ export default function HomeUpdatePage() {
                         alt={slide.title}
                         className="object-cover w-full h-full"
                       />
-                      <div className="absolute top-2 left-2">
-                        <Badge variant="secondary">Slide {slide.order}</Badge>
-                      </div>
+                      {typeof slide.order === "number" && slide.order > 0 ? (
+                        <div className="absolute top-2 left-2">
+                          <Badge variant="secondary">
+                            Banner {slide.order}
+                          </Badge>
+                        </div>
+                      ) : null}
                       <div className="absolute top-2 right-2 flex gap-2">
                         <Button
                           size="icon"
@@ -645,61 +646,74 @@ export default function HomeUpdatePage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-          {homeCards.map((card) => (
-            <Card key={card.id} className="relative group">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <Badge variant={card.isActive ? "default" : "secondary"}>
-                    {card.isActive ? "Active" : "Inactive"}
-                  </Badge>
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      size="icon"
-                      variant="destructive"
-                      className="shadow-md"
-                      onClick={() => handleDeleteCard(card)}
-                      title="Delete card"
-                      aria-label="Delete card"
-                    >
-                      <Trash className="h-5 w-5" />
-                    </Button>
+          {homeCards
+            .slice()
+            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+            .map((card) => (
+              <Card key={card.id} className="relative group">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={card.isActive ? "default" : "secondary"}>
+                        {card.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                      {typeof card.order === "number" && card.order > 0 ? (
+                        <Badge variant="secondary">Banner {card.order}</Badge>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        size="icon"
+                        variant="destructive"
+                        className="shadow-md"
+                        onClick={() => handleDeleteCard(card)}
+                        title="Delete card"
+                        aria-label="Delete card"
+                      >
+                        <Trash className="h-5 w-5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleEditCard(card)}
+                        aria-label="Edit card"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="aspect-video relative overflow-hidden rounded-lg bg-gray-100">
+                    <img
+                      src={card.imageUrl || "/placeholder.svg"}
+                      alt={card.title}
+                      className="object-cover w-full h-full"
+                    />
+                    {typeof card.order === "number" && card.order > 0 ? (
+                      <div className="absolute top-2 left-2">
+                        <Badge variant="secondary">Banner {card.order}</Badge>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg mb-2">{card.title}</CardTitle>
+                    <CardDescription className="text-sm text-gray-600 break-all">
+                      URL: {card.buttonUrl}
+                    </CardDescription>
+                  </div>
+                  <div className="flex justify-end pt-2">
                     <Button
                       size="sm"
-                      variant="ghost"
+                      variant="outline"
                       onClick={() => handleEditCard(card)}
-                      aria-label="Edit card"
                     >
-                      <Edit className="h-4 w-4" />
+                      <Edit className="h-4 w-4 mr-1" /> Edit
                     </Button>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="aspect-video relative overflow-hidden rounded-lg bg-gray-100">
-                  <img
-                    src={card.imageUrl || "/placeholder.svg"}
-                    alt={card.title}
-                    className="object-cover w-full h-full"
-                  />
-                </div>
-                <div>
-                  <CardTitle className="text-lg mb-2">{card.title}</CardTitle>
-                  <CardDescription className="text-sm text-gray-600 break-all">
-                    URL: {card.buttonUrl}
-                  </CardDescription>
-                </div>
-                <div className="flex justify-end pt-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleEditCard(card)}
-                  >
-                    <Edit className="h-4 w-4 mr-1" /> Edit
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            ))}
         </div>
       </div>
 
@@ -713,6 +727,22 @@ export default function HomeUpdatePage() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-4">
+            <div className="grid gap-2">
+              <Label htmlFor="banner-position">Banner position</Label>
+              <Input
+                id="banner-position"
+                type="number"
+                min={1}
+                value={cardFormData.order}
+                onChange={(e) => {
+                  const numericValue = e.target.value.replace(/[^0-9]/g, "");
+                  setCardFormData({ ...cardFormData, order: numericValue });
+                }}
+                placeholder="1"
+                required
+              />
+            </div>
+
             <div className="grid gap-2">
               <Label htmlFor="title">Title</Label>
               <Input
@@ -811,6 +841,9 @@ export default function HomeUpdatePage() {
             <Button
               onClick={handleSaveCard}
               disabled={
+                !cardFormData.order ||
+                Number.isNaN(Number(cardFormData.order)) ||
+                Number(cardFormData.order) <= 0 ||
                 !cardFormData.title.trim() ||
                 cardFormData.title.trim().length > 45 ||
                 !cardFormData.description.trim() ||
@@ -839,6 +872,24 @@ export default function HomeUpdatePage() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-4">
+            <div className="grid gap-2">
+              <Label htmlFor="slide-position">Banner position</Label>
+              <Input
+                id="slide-position"
+                type="number"
+                min={1}
+                value={slideFormData.order}
+                onChange={(e) => {
+                  const numericValue = e.target.value.replace(/[^0-9]/g, "");
+                  setSlideFormData((prev) => ({
+                    ...prev,
+                    order: numericValue ? Number(numericValue) : 0,
+                  }));
+                }}
+                placeholder="1"
+                required
+              />
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="slide-title">Title</Label>
               <Input
